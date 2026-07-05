@@ -1,15 +1,18 @@
 CREATE SCHEMA IF NOT EXISTS silver;
 CREATE SCHEMA IF NOT EXISTS gold;
 
+DROP VIEW IF EXISTS gold.vw_trip_enriched;
+DROP VIEW IF EXISTS gold.vw_daily_trip_summary;
+DROP VIEW IF EXISTS gold.vw_zone_performance;
 DROP VIEW IF EXISTS gold.trip_detail_view;
 DROP VIEW IF EXISTS gold.daily_trip_summary;
 DROP VIEW IF EXISTS gold.location_performance;
 DROP VIEW IF EXISTS gold.payment_method_summary;
 DROP VIEW IF EXISTS gold.weekend_trip_summary;
 DROP VIEW IF EXISTS gold.data_quality_summary;
-DROP TABLE IF EXISTS silver.data_quality_issues;
-DROP TABLE IF EXISTS silver.cleaned_yellow_taxi_trip;
-DROP TABLE IF EXISTS silver.taxi_zones_mapping;
+DROP TABLE IF EXISTS silver.data_quality_issues CASCADE;
+DROP TABLE IF EXISTS silver.cleaned_yellow_taxi_trip CASCADE;
+DROP TABLE IF EXISTS silver.taxi_zones_mapping CASCADE;
 
 CREATE TABLE silver.taxi_zones_mapping (
     locationid INTEGER PRIMARY KEY,
