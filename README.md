@@ -247,18 +247,19 @@ Gold layer dibuat sebagai view, bukan table fisik, supaya data mart selalu mengi
 
 Business questions yang dijawab di `business_questions.sql`:
 
-1. Bagaimana total trips dan rata-rata metrik trip pada weekend vs weekday?
-2. Payment type apa yang memiliki total trips dan revenue tertinggi?
-3. Pickup location mana yang memiliki average trip distance tertinggi?
-4. Pickup location mana yang memiliki average revenue tertinggi?
-5. Bagaimana summary trips berdasarkan pickup date?
-6. Error type apa yang paling banyak muncul pada data quality issues?
-7. Apa top 10 pickup location dengan average revenue tertinggi?
-8. Pickup location mana yang memiliki average tip amount terendah?
-9. Bagaimana perbandingan revenue harian terhadap rata-rata revenue harian?
-10. Bagaimana ranking pickup location berdasarkan total revenue?
-11. Bagaimana ranking revenue dalam setiap borough?
-12. Bagaimana moving average 7 hari untuk durasi trip?
+1. Berapa total valid trips setelah proses cleansing?
+2. Bagaimana total trips dan rata-rata metrik trip pada weekend vs weekday?
+3. Payment type apa yang memiliki total trips dan revenue tertinggi?
+4. Pickup location mana yang memiliki average trip distance tertinggi?
+5. Pickup location mana yang memiliki average revenue tertinggi?
+6. Bagaimana summary trips berdasarkan pickup date?
+7. Error type apa yang paling banyak muncul pada data quality issues?
+8. Apa top 10 pickup location dengan average revenue tertinggi?
+9. Pickup location mana yang memiliki average tip amount terendah?
+10. Bagaimana perbandingan revenue harian terhadap rata-rata revenue harian?
+11. Bagaimana ranking pickup location berdasarkan total revenue?
+12. Bagaimana ranking revenue dalam setiap borough?
+13. Bagaimana moving average 7 hari untuk durasi trip?
 
 ## 11. Kendala Teknis dan Asumsi
 
