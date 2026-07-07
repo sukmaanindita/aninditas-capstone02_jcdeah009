@@ -824,3 +824,45 @@ ON silver.data_quality_issues (error_type);
 ✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 1.20s ===
 2026-07-05 22:32:48 END   main duration=171s
 2026-07-05 22:32:48 PIPELINE COMPLETE
+2026-07-05 22:45:34 PIPELINE START
+2026-07-05 22:45:34 START main
+✅[OK] === Database connection established ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.01s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.02s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.31s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 185.32s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/02_transform_and_load_silver.sql | duration: 17.46s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/03_create_gold_data_mart.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 1.90s ===
+2026-07-05 22:49:00 END   main duration=206s
+2026-07-05 22:49:00 PIPELINE COMPLETE
+2026-07-07 10:02:01 PIPELINE START
+2026-07-07 10:02:01 START main
+✅[OK] === Database connection established ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.00s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.06s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.38s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 143.42s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/02_transform_and_load_silver.sql | duration: 9.25s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/03_create_gold_data_mart.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 0.83s ===
+2026-07-07 10:04:38 END   main duration=157s
+2026-07-07 10:04:38 PIPELINE COMPLETE
