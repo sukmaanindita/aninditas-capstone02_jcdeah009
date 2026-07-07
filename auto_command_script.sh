@@ -34,5 +34,7 @@ run_step() {
 }
 
 log "PIPELINE START"
+run_step "start database" docker compose up -d
+run_step "wait database" bash -c 'for i in {1..30}; do docker compose exec -T db pg_isready && exit 0; sleep 2; done; exit 1'
 run_step "main" python3 -u "$SCRIPT_DIR/main.py"
 log "PIPELINE COMPLETE"

@@ -39,13 +39,7 @@ CREATE TABLE bronze.raw_yellow_taxi_trip (
     is_weekend BOOLEAN,
     trip_duration NUMERIC,
     time_period VARCHAR(30),
-    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_raw_yellow_trip_pulocation
-        FOREIGN KEY (pulocationid)
-        REFERENCES bronze.raw_taxi_zone_lookup (locationid),
-    CONSTRAINT fk_raw_yellow_trip_dolocation
-        FOREIGN KEY (dolocationid)
-        REFERENCES bronze.raw_taxi_zone_lookup (locationid)
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_raw_yellow_trip_pickup_datetime

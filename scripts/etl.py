@@ -7,6 +7,7 @@ from sqlalchemy import text
 file_path = Path("./data/raw/")
 file_name1 = "yellow_tripdata_2026-01.parquet"
 file_name2 = "taxi_zone_lookup_table.csv"
+bronze_schema_path = Path("./sql/init/01_create_bronze_tables.sql")
 transform_silver_path = Path("./sql/init/02_transform_and_load_silver.sql")
 gold_data_mart_path = Path("./sql/init/03_create_gold_data_mart.sql")
 

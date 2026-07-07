@@ -7,6 +7,7 @@ from scripts.etl import (
     file_path,
     file_name1,
     file_name2,
+    bronze_schema_path,
     transform_silver_path,
     gold_data_mart_path,
 )
@@ -28,6 +29,16 @@ audit_logger = AuditLogger(engine)
 bronze_loader = BronzeLoadData(engine, audit_logger)
 transformer = TransformData(engine, audit_logger)
 extractor = ExtractData(file_path=file_path, audit_logger=audit_logger)
+
+transformer.execute_sql_file(
+    bronze_schema_path,
+    process_name="create_bronze_tables",
+    target_schema="bronze",
+    target_tables=[
+        "raw_taxi_zone_lookup",
+        "raw_yellow_taxi_trip",
+    ],
+)
 
 df2 = extractor.extract_csv(file_name2)
 if not df2.empty:

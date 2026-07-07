@@ -866,3 +866,1476 @@ ON silver.data_quality_issues (error_type);
 ✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 0.83s ===
 2026-07-07 10:04:38 END   main duration=157s
 2026-07-07 10:04:38 PIPELINE COMPLETE
+2026-07-07 14:35:24 PIPELINE START
+2026-07-07 14:35:24 START start database
+ Container capstone02_postgres Running 
+2026-07-07 14:35:24 END   start database duration=0s
+2026-07-07 14:35:24 START wait database
+/var/run/postgresql:5432 - accepting connections
+2026-07-07 14:35:24 END   wait database duration=0s
+2026-07-07 14:35:24 START main
+✅[OK] === Database connection established ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/01_create_bronze_tables.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/01_create_bronze_tables.sql | duration: 0.08s ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.01s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.04s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.29s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 141.56s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+❌[ERROR] === Transform dan Load SQL gagal dijalankan: (psycopg2.errors.NotNullViolation) null value in column "zone" of relation "taxi_zones_mapping" violates not-null constraint
+DETAIL:  Failing row contains (264, Unknown, null, null, 2026-07-07 07:37:47.42629).
+
+[SQL: CREATE SCHEMA IF NOT EXISTS silver;
+CREATE SCHEMA IF NOT EXISTS gold;
+
+DROP VIEW IF EXISTS gold.vw_trip_enriched;
+DROP VIEW IF EXISTS gold.vw_daily_trip_summary;
+DROP VIEW IF EXISTS gold.vw_zone_performance;
+DROP VIEW IF EXISTS gold.trip_detail_view;
+DROP VIEW IF EXISTS gold.daily_trip_summary;
+DROP VIEW IF EXISTS gold.location_performance;
+DROP VIEW IF EXISTS gold.payment_method_summary;
+DROP VIEW IF EXISTS gold.weekend_trip_summary;
+DROP VIEW IF EXISTS gold.data_quality_summary;
+DROP TABLE IF EXISTS silver.data_quality_issues CASCADE;
+DROP TABLE IF EXISTS silver.cleaned_yellow_taxi_trip CASCADE;
+DROP TABLE IF EXISTS silver.taxi_zones_mapping CASCADE;
+
+CREATE TABLE silver.taxi_zones_mapping (
+    locationid INTEGER PRIMARY KEY,
+    borough VARCHAR(100) NOT NULL,
+    zone VARCHAR(255) NOT NULL,
+    service_zone VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.taxi_zones_mapping (
+    locationid,
+    borough,
+    zone,
+    service_zone
+)
+SELECT
+    locationid,
+    borough,
+    zone,
+    service_zone
+FROM bronze.raw_taxi_zone_lookup
+WHERE locationid IS NOT NULL;
+
+CREATE TABLE silver.cleaned_yellow_taxi_trip (
+    cleaned_trip_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER NOT NULL,
+    tpep_pickup_datetime TIMESTAMP NOT NULL,
+    tpep_dropoff_datetime TIMESTAMP NOT NULL,
+    passenger_count NUMERIC NOT NULL CHECK (passenger_count > 0),
+    trip_distance NUMERIC NOT NULL CHECK (trip_distance > 0),
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    store_and_fwd_label VARCHAR(30),
+    pu_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    pickup_borough VARCHAR(100),
+    pickup_zone VARCHAR(255),
+    do_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    dropoff_borough VARCHAR(100),
+    dropoff_zone VARCHAR(255),
+    payment_type VARCHAR(50) NOT NULL,
+    payment_type_label VARCHAR(50) NOT NULL,
+    fare_amount NUMERIC CHECK (fare_amount >= 0),
+    extra NUMERIC,
+    mta_tax NUMERIC,
+    tip_amount NUMERIC CHECK (tip_amount >= 0),
+    tolls_amount NUMERIC,
+    improvement_surcharge NUMERIC,
+    total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+    congestion_surcharge NUMERIC,
+    airport_fee NUMERIC,
+    cbd_congestion_fee NUMERIC,
+    pickup_date DATE NOT NULL,
+    pickup_hour INTEGER NOT NULL CHECK (pickup_hour BETWEEN 0 AND 23),
+    pickup_time TIME NOT NULL,
+    pickup_day_name VARCHAR(20) NOT NULL,
+    is_weekend VARCHAR(1) NOT NULL CHECK (is_weekend IN ('Y', 'N')),
+    time_period VARCHAR(30) NOT NULL,
+    trip_duration_minutes NUMERIC NOT NULL CHECK (trip_duration_minutes > 0),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.cleaned_yellow_taxi_trip (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    store_and_fwd_label,
+    pu_location_id,
+    pickup_borough,
+    pickup_zone,
+    do_location_id,
+    dropoff_borough,
+    dropoff_zone,
+    payment_type,
+    payment_type_label,
+    fare_amount,
+    extra,
+    mta_tax,
+    tip_amount,
+    tolls_amount,
+    improvement_surcharge,
+    total_amount,
+    congestion_surcharge,
+    airport_fee,
+    cbd_congestion_fee,
+    pickup_date,
+    pickup_hour,
+    pickup_time,
+    pickup_day_name,
+    is_weekend,
+    time_period,
+    trip_duration_minutes
+)
+SELECT
+    rytt.vendorid AS vendor_id,
+    rytt.tpep_pickup_datetime,
+    rytt.tpep_dropoff_datetime,
+    rytt.passenger_count,
+    rytt.trip_distance,
+    rytt.ratecodeid AS rate_code_id,
+    rytt.store_and_fwd_flag,
+    CASE
+        WHEN rytt.store_and_fwd_flag = 'Y' THEN 'Store and Forward'
+        WHEN rytt.store_and_fwd_flag = 'N' THEN 'Normal'
+        ELSE 'Unknown'
+    END AS store_and_fwd_label,
+    rytt.pulocationid AS pu_location_id,
+    pickup_zone.borough AS pickup_borough,
+    pickup_zone.zone AS pickup_zone,
+    rytt.dolocationid AS do_location_id,
+    dropoff_zone.borough AS dropoff_borough,
+    dropoff_zone.zone AS dropoff_zone,
+    rytt.payment_type,
+    CASE rytt.payment_type::TEXT
+        WHEN '1' THEN 'Credit Card'
+        WHEN '2' THEN 'Cash'
+        WHEN '3' THEN 'No Charge'
+        WHEN '4' THEN 'Dispute'
+        WHEN '5' THEN 'Unknown'
+        WHEN '6' THEN 'Voided Trip'
+        WHEN '0' THEN 'Unknown'
+        ELSE 'Unknown'
+    END AS payment_type_label,
+    rytt.fare_amount,
+    rytt.extra,
+    rytt.mta_tax,
+    rytt.tip_amount,
+    rytt.tolls_amount,
+    rytt.improvement_surcharge,
+    rytt.total_amount,
+    rytt.congestion_surcharge,
+    rytt.airport_fee,
+    rytt.cbd_congestion_fee,
+    rytt.tpep_pickup_datetime::DATE AS pickup_date,
+    EXTRACT(HOUR FROM rytt.tpep_pickup_datetime)::INTEGER AS pickup_hour,
+    rytt.tpep_pickup_datetime::TIME AS pickup_time,
+    TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) AS pickup_day_name,
+    CASE
+        WHEN TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) IN ('Saturday', 'Sunday') THEN 'Y'
+        ELSE 'N'
+    END AS is_weekend,
+    CASE
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 0 AND 5 THEN 'Late Night'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 6 AND 10 THEN 'Morning'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 11 AND 15 THEN 'Afternoon'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 16 AND 19 THEN 'Evening Rush'
+        ELSE 'Night'
+    END AS time_period,
+    ROUND(EXTRACT(EPOCH FROM (rytt.tpep_dropoff_datetime - rytt.tpep_pickup_datetime)) / 60) AS trip_duration_minutes
+FROM bronze.raw_yellow_taxi_trip rytt
+JOIN silver.taxi_zones_mapping pickup_zone
+    ON rytt.pulocationid = pickup_zone.locationid
+JOIN silver.taxi_zones_mapping dropoff_zone
+    ON rytt.dolocationid = dropoff_zone.locationid
+WHERE rytt.vendorid IS NOT NULL
+    AND rytt.tpep_pickup_datetime IS NOT NULL
+    AND rytt.tpep_dropoff_datetime IS NOT NULL
+    AND rytt.pulocationid IS NOT NULL
+    AND rytt.dolocationid IS NOT NULL
+    AND rytt.passenger_count IS NOT NULL
+    AND rytt.trip_distance IS NOT NULL
+    AND rytt.payment_type IS NOT NULL
+    AND rytt.total_amount IS NOT NULL
+    AND rytt.tpep_dropoff_datetime > rytt.tpep_pickup_datetime
+    AND rytt.passenger_count > 0
+    AND rytt.trip_distance > 0
+    AND COALESCE(rytt.fare_amount, 0) >= 0
+    AND COALESCE(rytt.tip_amount, 0) >= 0
+    AND rytt.total_amount >= 0;
+
+CREATE TABLE silver.data_quality_issues (
+    issue_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER,
+    tpep_pickup_datetime TIMESTAMP,
+    tpep_dropoff_datetime TIMESTAMP,
+    passenger_count NUMERIC,
+    trip_distance NUMERIC,
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    pu_location_id INTEGER,
+    do_location_id INTEGER,
+    payment_type VARCHAR(50),
+    fare_amount NUMERIC,
+    tip_amount NUMERIC,
+    total_amount NUMERIC,
+    error_type VARCHAR(50) NOT NULL,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.data_quality_issues (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    pu_location_id,
+    do_location_id,
+    payment_type,
+    fare_amount,
+    tip_amount,
+    total_amount,
+    error_type
+)
+SELECT
+    b.vendorid AS vendor_id,
+    b.tpep_pickup_datetime,
+    b.tpep_dropoff_datetime,
+    b.passenger_count,
+    b.trip_distance,
+    b.ratecodeid AS rate_code_id,
+    b.store_and_fwd_flag,
+    b.pulocationid AS pu_location_id,
+    b.dolocationid AS do_location_id,
+    b.payment_type,
+    b.fare_amount,
+    b.tip_amount,
+    b.total_amount,
+    CASE
+        WHEN b.vendorid IS NULL
+            OR b.tpep_pickup_datetime IS NULL
+            OR b.tpep_dropoff_datetime IS NULL
+            OR b.pulocationid IS NULL
+            OR b.dolocationid IS NULL
+            OR b.passenger_count IS NULL
+            OR b.trip_distance IS NULL
+            OR b.payment_type IS NULL
+            OR b.total_amount IS NULL THEN 'Data Invalid'
+        WHEN pickup_zone.locationid IS NULL OR dropoff_zone.locationid IS NULL THEN 'Location Invalid'
+        WHEN b.tpep_pickup_datetime >= b.tpep_dropoff_datetime THEN 'Duration Invalid'
+        WHEN b.trip_distance <= 0 THEN 'Distance Invalid'
+        WHEN b.passenger_count <= 0 THEN 'Passenger Invalid'
+        WHEN COALESCE(b.fare_amount, 0) < 0 THEN 'Fare Invalid'
+        WHEN COALESCE(b.tip_amount, 0) < 0 THEN 'Tip Invalid'
+        WHEN b.total_amount < 0 THEN 'Amount Invalid'
+    END AS error_type
+FROM bronze.raw_yellow_taxi_trip b
+LEFT JOIN silver.taxi_zones_mapping pickup_zone
+    ON b.pulocationid = pickup_zone.locationid
+LEFT JOIN silver.taxi_zones_mapping dropoff_zone
+    ON b.dolocationid = dropoff_zone.locationid
+WHERE b.vendorid IS NULL
+    OR b.tpep_pickup_datetime IS NULL
+    OR b.tpep_dropoff_datetime IS NULL
+    OR b.pulocationid IS NULL
+    OR b.dolocationid IS NULL
+    OR b.passenger_count IS NULL
+    OR b.trip_distance IS NULL
+    OR b.payment_type IS NULL
+    OR b.total_amount IS NULL
+    OR pickup_zone.locationid IS NULL
+    OR dropoff_zone.locationid IS NULL
+    OR b.tpep_pickup_datetime >= b.tpep_dropoff_datetime
+    OR b.passenger_count <= 0
+    OR b.trip_distance <= 0
+    OR COALESCE(b.fare_amount, 0) < 0
+    OR COALESCE(b.tip_amount, 0) < 0
+    OR b.total_amount < 0;
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_datetime
+ON silver.cleaned_yellow_taxi_trip (tpep_pickup_datetime);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_date
+ON silver.cleaned_yellow_taxi_trip (pickup_date);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_hour
+ON silver.cleaned_yellow_taxi_trip (pickup_hour);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_payment_type
+ON silver.cleaned_yellow_taxi_trip (payment_type_label);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_location
+ON silver.cleaned_yellow_taxi_trip (pu_location_id, do_location_id);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_zone
+ON silver.cleaned_yellow_taxi_trip (pickup_borough, pickup_zone);
+
+CREATE INDEX IF NOT EXISTS idx_taxi_zones_mapping_borough
+ON silver.taxi_zones_mapping (borough);
+
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_error_type
+ON silver.data_quality_issues (error_type);
+]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) | duration: 0.02s ===
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.NotNullViolation: null value in column "zone" of relation "taxi_zones_mapping" violates not-null constraint
+DETAIL:  Failing row contains (264, Unknown, null, null, 2026-07-07 07:37:47.42629).
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/anninditas/Desktop/Purwadhika/JCDEAH-009/Capstone02/main.py", line 51, in <module>
+    transformer.execute_sql_file(transform_silver_path)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anninditas/Desktop/Purwadhika/JCDEAH-009/Capstone02/scripts/etl.py", line 325, in execute_sql_file
+    conn.exec_driver_sql(sql_script)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1781, in exec_driver_sql
+    ret = self._execute_context(
+        dialect,
+    ...<5 lines>...
+        distilled_parameters,
+    )
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.IntegrityError: (psycopg2.errors.NotNullViolation) null value in column "zone" of relation "taxi_zones_mapping" violates not-null constraint
+DETAIL:  Failing row contains (264, Unknown, null, null, 2026-07-07 07:37:47.42629).
+
+[SQL: CREATE SCHEMA IF NOT EXISTS silver;
+CREATE SCHEMA IF NOT EXISTS gold;
+
+DROP VIEW IF EXISTS gold.vw_trip_enriched;
+DROP VIEW IF EXISTS gold.vw_daily_trip_summary;
+DROP VIEW IF EXISTS gold.vw_zone_performance;
+DROP VIEW IF EXISTS gold.trip_detail_view;
+DROP VIEW IF EXISTS gold.daily_trip_summary;
+DROP VIEW IF EXISTS gold.location_performance;
+DROP VIEW IF EXISTS gold.payment_method_summary;
+DROP VIEW IF EXISTS gold.weekend_trip_summary;
+DROP VIEW IF EXISTS gold.data_quality_summary;
+DROP TABLE IF EXISTS silver.data_quality_issues CASCADE;
+DROP TABLE IF EXISTS silver.cleaned_yellow_taxi_trip CASCADE;
+DROP TABLE IF EXISTS silver.taxi_zones_mapping CASCADE;
+
+CREATE TABLE silver.taxi_zones_mapping (
+    locationid INTEGER PRIMARY KEY,
+    borough VARCHAR(100) NOT NULL,
+    zone VARCHAR(255) NOT NULL,
+    service_zone VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.taxi_zones_mapping (
+    locationid,
+    borough,
+    zone,
+    service_zone
+)
+SELECT
+    locationid,
+    borough,
+    zone,
+    service_zone
+FROM bronze.raw_taxi_zone_lookup
+WHERE locationid IS NOT NULL;
+
+CREATE TABLE silver.cleaned_yellow_taxi_trip (
+    cleaned_trip_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER NOT NULL,
+    tpep_pickup_datetime TIMESTAMP NOT NULL,
+    tpep_dropoff_datetime TIMESTAMP NOT NULL,
+    passenger_count NUMERIC NOT NULL CHECK (passenger_count > 0),
+    trip_distance NUMERIC NOT NULL CHECK (trip_distance > 0),
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    store_and_fwd_label VARCHAR(30),
+    pu_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    pickup_borough VARCHAR(100),
+    pickup_zone VARCHAR(255),
+    do_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    dropoff_borough VARCHAR(100),
+    dropoff_zone VARCHAR(255),
+    payment_type VARCHAR(50) NOT NULL,
+    payment_type_label VARCHAR(50) NOT NULL,
+    fare_amount NUMERIC CHECK (fare_amount >= 0),
+    extra NUMERIC,
+    mta_tax NUMERIC,
+    tip_amount NUMERIC CHECK (tip_amount >= 0),
+    tolls_amount NUMERIC,
+    improvement_surcharge NUMERIC,
+    total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+    congestion_surcharge NUMERIC,
+    airport_fee NUMERIC,
+    cbd_congestion_fee NUMERIC,
+    pickup_date DATE NOT NULL,
+    pickup_hour INTEGER NOT NULL CHECK (pickup_hour BETWEEN 0 AND 23),
+    pickup_time TIME NOT NULL,
+    pickup_day_name VARCHAR(20) NOT NULL,
+    is_weekend VARCHAR(1) NOT NULL CHECK (is_weekend IN ('Y', 'N')),
+    time_period VARCHAR(30) NOT NULL,
+    trip_duration_minutes NUMERIC NOT NULL CHECK (trip_duration_minutes > 0),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.cleaned_yellow_taxi_trip (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    store_and_fwd_label,
+    pu_location_id,
+    pickup_borough,
+    pickup_zone,
+    do_location_id,
+    dropoff_borough,
+    dropoff_zone,
+    payment_type,
+    payment_type_label,
+    fare_amount,
+    extra,
+    mta_tax,
+    tip_amount,
+    tolls_amount,
+    improvement_surcharge,
+    total_amount,
+    congestion_surcharge,
+    airport_fee,
+    cbd_congestion_fee,
+    pickup_date,
+    pickup_hour,
+    pickup_time,
+    pickup_day_name,
+    is_weekend,
+    time_period,
+    trip_duration_minutes
+)
+SELECT
+    rytt.vendorid AS vendor_id,
+    rytt.tpep_pickup_datetime,
+    rytt.tpep_dropoff_datetime,
+    rytt.passenger_count,
+    rytt.trip_distance,
+    rytt.ratecodeid AS rate_code_id,
+    rytt.store_and_fwd_flag,
+    CASE
+        WHEN rytt.store_and_fwd_flag = 'Y' THEN 'Store and Forward'
+        WHEN rytt.store_and_fwd_flag = 'N' THEN 'Normal'
+        ELSE 'Unknown'
+    END AS store_and_fwd_label,
+    rytt.pulocationid AS pu_location_id,
+    pickup_zone.borough AS pickup_borough,
+    pickup_zone.zone AS pickup_zone,
+    rytt.dolocationid AS do_location_id,
+    dropoff_zone.borough AS dropoff_borough,
+    dropoff_zone.zone AS dropoff_zone,
+    rytt.payment_type,
+    CASE rytt.payment_type::TEXT
+        WHEN '1' THEN 'Credit Card'
+        WHEN '2' THEN 'Cash'
+        WHEN '3' THEN 'No Charge'
+        WHEN '4' THEN 'Dispute'
+        WHEN '5' THEN 'Unknown'
+        WHEN '6' THEN 'Voided Trip'
+        WHEN '0' THEN 'Unknown'
+        ELSE 'Unknown'
+    END AS payment_type_label,
+    rytt.fare_amount,
+    rytt.extra,
+    rytt.mta_tax,
+    rytt.tip_amount,
+    rytt.tolls_amount,
+    rytt.improvement_surcharge,
+    rytt.total_amount,
+    rytt.congestion_surcharge,
+    rytt.airport_fee,
+    rytt.cbd_congestion_fee,
+    rytt.tpep_pickup_datetime::DATE AS pickup_date,
+    EXTRACT(HOUR FROM rytt.tpep_pickup_datetime)::INTEGER AS pickup_hour,
+    rytt.tpep_pickup_datetime::TIME AS pickup_time,
+    TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) AS pickup_day_name,
+    CASE
+        WHEN TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) IN ('Saturday', 'Sunday') THEN 'Y'
+        ELSE 'N'
+    END AS is_weekend,
+    CASE
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 0 AND 5 THEN 'Late Night'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 6 AND 10 THEN 'Morning'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 11 AND 15 THEN 'Afternoon'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 16 AND 19 THEN 'Evening Rush'
+        ELSE 'Night'
+    END AS time_period,
+    ROUND(EXTRACT(EPOCH FROM (rytt.tpep_dropoff_datetime - rytt.tpep_pickup_datetime)) / 60) AS trip_duration_minutes
+FROM bronze.raw_yellow_taxi_trip rytt
+JOIN silver.taxi_zones_mapping pickup_zone
+    ON rytt.pulocationid = pickup_zone.locationid
+JOIN silver.taxi_zones_mapping dropoff_zone
+    ON rytt.dolocationid = dropoff_zone.locationid
+WHERE rytt.vendorid IS NOT NULL
+    AND rytt.tpep_pickup_datetime IS NOT NULL
+    AND rytt.tpep_dropoff_datetime IS NOT NULL
+    AND rytt.pulocationid IS NOT NULL
+    AND rytt.dolocationid IS NOT NULL
+    AND rytt.passenger_count IS NOT NULL
+    AND rytt.trip_distance IS NOT NULL
+    AND rytt.payment_type IS NOT NULL
+    AND rytt.total_amount IS NOT NULL
+    AND rytt.tpep_dropoff_datetime > rytt.tpep_pickup_datetime
+    AND rytt.passenger_count > 0
+    AND rytt.trip_distance > 0
+    AND COALESCE(rytt.fare_amount, 0) >= 0
+    AND COALESCE(rytt.tip_amount, 0) >= 0
+    AND rytt.total_amount >= 0;
+
+CREATE TABLE silver.data_quality_issues (
+    issue_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER,
+    tpep_pickup_datetime TIMESTAMP,
+    tpep_dropoff_datetime TIMESTAMP,
+    passenger_count NUMERIC,
+    trip_distance NUMERIC,
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    pu_location_id INTEGER,
+    do_location_id INTEGER,
+    payment_type VARCHAR(50),
+    fare_amount NUMERIC,
+    tip_amount NUMERIC,
+    total_amount NUMERIC,
+    error_type VARCHAR(50) NOT NULL,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.data_quality_issues (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    pu_location_id,
+    do_location_id,
+    payment_type,
+    fare_amount,
+    tip_amount,
+    total_amount,
+    error_type
+)
+SELECT
+    b.vendorid AS vendor_id,
+    b.tpep_pickup_datetime,
+    b.tpep_dropoff_datetime,
+    b.passenger_count,
+    b.trip_distance,
+    b.ratecodeid AS rate_code_id,
+    b.store_and_fwd_flag,
+    b.pulocationid AS pu_location_id,
+    b.dolocationid AS do_location_id,
+    b.payment_type,
+    b.fare_amount,
+    b.tip_amount,
+    b.total_amount,
+    CASE
+        WHEN b.vendorid IS NULL
+            OR b.tpep_pickup_datetime IS NULL
+            OR b.tpep_dropoff_datetime IS NULL
+            OR b.pulocationid IS NULL
+            OR b.dolocationid IS NULL
+            OR b.passenger_count IS NULL
+            OR b.trip_distance IS NULL
+            OR b.payment_type IS NULL
+            OR b.total_amount IS NULL THEN 'Data Invalid'
+        WHEN pickup_zone.locationid IS NULL OR dropoff_zone.locationid IS NULL THEN 'Location Invalid'
+        WHEN b.tpep_pickup_datetime >= b.tpep_dropoff_datetime THEN 'Duration Invalid'
+        WHEN b.trip_distance <= 0 THEN 'Distance Invalid'
+        WHEN b.passenger_count <= 0 THEN 'Passenger Invalid'
+        WHEN COALESCE(b.fare_amount, 0) < 0 THEN 'Fare Invalid'
+        WHEN COALESCE(b.tip_amount, 0) < 0 THEN 'Tip Invalid'
+        WHEN b.total_amount < 0 THEN 'Amount Invalid'
+    END AS error_type
+FROM bronze.raw_yellow_taxi_trip b
+LEFT JOIN silver.taxi_zones_mapping pickup_zone
+    ON b.pulocationid = pickup_zone.locationid
+LEFT JOIN silver.taxi_zones_mapping dropoff_zone
+    ON b.dolocationid = dropoff_zone.locationid
+WHERE b.vendorid IS NULL
+    OR b.tpep_pickup_datetime IS NULL
+    OR b.tpep_dropoff_datetime IS NULL
+    OR b.pulocationid IS NULL
+    OR b.dolocationid IS NULL
+    OR b.passenger_count IS NULL
+    OR b.trip_distance IS NULL
+    OR b.payment_type IS NULL
+    OR b.total_amount IS NULL
+    OR pickup_zone.locationid IS NULL
+    OR dropoff_zone.locationid IS NULL
+    OR b.tpep_pickup_datetime >= b.tpep_dropoff_datetime
+    OR b.passenger_count <= 0
+    OR b.trip_distance <= 0
+    OR COALESCE(b.fare_amount, 0) < 0
+    OR COALESCE(b.tip_amount, 0) < 0
+    OR b.total_amount < 0;
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_datetime
+ON silver.cleaned_yellow_taxi_trip (tpep_pickup_datetime);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_date
+ON silver.cleaned_yellow_taxi_trip (pickup_date);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_hour
+ON silver.cleaned_yellow_taxi_trip (pickup_hour);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_payment_type
+ON silver.cleaned_yellow_taxi_trip (payment_type_label);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_location
+ON silver.cleaned_yellow_taxi_trip (pu_location_id, do_location_id);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_zone
+ON silver.cleaned_yellow_taxi_trip (pickup_borough, pickup_zone);
+
+CREATE INDEX IF NOT EXISTS idx_taxi_zones_mapping_borough
+ON silver.taxi_zones_mapping (borough);
+
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_error_type
+ON silver.data_quality_issues (error_type);
+]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+2026-07-07 14:37:47 ERROR main exited with status=1 after 143s
+2026-07-07 14:41:41 PIPELINE START
+2026-07-07 14:41:41 START start database
+ Container capstone02_postgres Running 
+2026-07-07 14:41:41 END   start database duration=0s
+2026-07-07 14:41:41 START wait database
+/var/run/postgresql:5432 - accepting connections
+2026-07-07 14:41:41 END   wait database duration=0s
+2026-07-07 14:41:41 START main
+✅[OK] === Database connection established ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/01_create_bronze_tables.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/01_create_bronze_tables.sql | duration: 0.06s ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.00s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.02s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.11s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 129.90s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+❌[ERROR] === Transform dan Load SQL gagal dijalankan: (psycopg2.errors.CheckViolation) new row for relation "cleaned_yellow_taxi_trip" violates check constraint "cleaned_yellow_taxi_trip_trip_duration_minutes_check"
+DETAIL:  Failing row contains (936, 2, 2025-12-31 23:57:29, 2025-12-31 23:57:32, 2.0, 0.01, 2.0, N, Normal, 132, Queens, JFK Airport, 264, Unknown, Unknown, 3, No Charge, 70.0, 0.0, 0.5, 0.0, 0.0, 1.0, 71.5, 0.0, 0.0, 0.0, 2025-12-31, 23, 23:57:29, Wednesday, N, Night, 0, 2026-07-07 07:43:52.31917).
+
+[SQL: CREATE SCHEMA IF NOT EXISTS silver;
+CREATE SCHEMA IF NOT EXISTS gold;
+
+DROP VIEW IF EXISTS gold.vw_trip_enriched;
+DROP VIEW IF EXISTS gold.vw_daily_trip_summary;
+DROP VIEW IF EXISTS gold.vw_zone_performance;
+DROP VIEW IF EXISTS gold.trip_detail_view;
+DROP VIEW IF EXISTS gold.daily_trip_summary;
+DROP VIEW IF EXISTS gold.location_performance;
+DROP VIEW IF EXISTS gold.payment_method_summary;
+DROP VIEW IF EXISTS gold.weekend_trip_summary;
+DROP VIEW IF EXISTS gold.data_quality_summary;
+DROP TABLE IF EXISTS silver.data_quality_issues CASCADE;
+DROP TABLE IF EXISTS silver.cleaned_yellow_taxi_trip CASCADE;
+DROP TABLE IF EXISTS silver.taxi_zones_mapping CASCADE;
+
+CREATE TABLE silver.taxi_zones_mapping (
+    locationid INTEGER PRIMARY KEY,
+    borough VARCHAR(100) NOT NULL,
+    zone VARCHAR(255) NOT NULL,
+    service_zone VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.taxi_zones_mapping (
+    locationid,
+    borough,
+    zone,
+    service_zone
+)
+SELECT
+    locationid,
+    COALESCE(borough, 'Unknown') AS borough,
+    COALESCE(zone, 'Unknown') AS zone,
+    COALESCE(service_zone, 'Unknown') AS service_zone
+FROM bronze.raw_taxi_zone_lookup
+WHERE locationid IS NOT NULL;
+
+CREATE TABLE silver.cleaned_yellow_taxi_trip (
+    cleaned_trip_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER NOT NULL,
+    tpep_pickup_datetime TIMESTAMP NOT NULL,
+    tpep_dropoff_datetime TIMESTAMP NOT NULL,
+    passenger_count NUMERIC NOT NULL CHECK (passenger_count > 0),
+    trip_distance NUMERIC NOT NULL CHECK (trip_distance > 0),
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    store_and_fwd_label VARCHAR(30),
+    pu_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    pickup_borough VARCHAR(100),
+    pickup_zone VARCHAR(255),
+    do_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    dropoff_borough VARCHAR(100),
+    dropoff_zone VARCHAR(255),
+    payment_type VARCHAR(50) NOT NULL,
+    payment_type_label VARCHAR(50) NOT NULL,
+    fare_amount NUMERIC CHECK (fare_amount >= 0),
+    extra NUMERIC,
+    mta_tax NUMERIC,
+    tip_amount NUMERIC CHECK (tip_amount >= 0),
+    tolls_amount NUMERIC,
+    improvement_surcharge NUMERIC,
+    total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+    congestion_surcharge NUMERIC,
+    airport_fee NUMERIC,
+    cbd_congestion_fee NUMERIC,
+    pickup_date DATE NOT NULL,
+    pickup_hour INTEGER NOT NULL CHECK (pickup_hour BETWEEN 0 AND 23),
+    pickup_time TIME NOT NULL,
+    pickup_day_name VARCHAR(20) NOT NULL,
+    is_weekend VARCHAR(1) NOT NULL CHECK (is_weekend IN ('Y', 'N')),
+    time_period VARCHAR(30) NOT NULL,
+    trip_duration_minutes NUMERIC NOT NULL CHECK (trip_duration_minutes > 0),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.cleaned_yellow_taxi_trip (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    store_and_fwd_label,
+    pu_location_id,
+    pickup_borough,
+    pickup_zone,
+    do_location_id,
+    dropoff_borough,
+    dropoff_zone,
+    payment_type,
+    payment_type_label,
+    fare_amount,
+    extra,
+    mta_tax,
+    tip_amount,
+    tolls_amount,
+    improvement_surcharge,
+    total_amount,
+    congestion_surcharge,
+    airport_fee,
+    cbd_congestion_fee,
+    pickup_date,
+    pickup_hour,
+    pickup_time,
+    pickup_day_name,
+    is_weekend,
+    time_period,
+    trip_duration_minutes
+)
+SELECT
+    rytt.vendorid AS vendor_id,
+    rytt.tpep_pickup_datetime,
+    rytt.tpep_dropoff_datetime,
+    rytt.passenger_count,
+    rytt.trip_distance,
+    rytt.ratecodeid AS rate_code_id,
+    rytt.store_and_fwd_flag,
+    CASE
+        WHEN rytt.store_and_fwd_flag = 'Y' THEN 'Store and Forward'
+        WHEN rytt.store_and_fwd_flag = 'N' THEN 'Normal'
+        ELSE 'Unknown'
+    END AS store_and_fwd_label,
+    rytt.pulocationid AS pu_location_id,
+    pickup_zone.borough AS pickup_borough,
+    pickup_zone.zone AS pickup_zone,
+    rytt.dolocationid AS do_location_id,
+    dropoff_zone.borough AS dropoff_borough,
+    dropoff_zone.zone AS dropoff_zone,
+    rytt.payment_type,
+    CASE rytt.payment_type::TEXT
+        WHEN '1' THEN 'Credit Card'
+        WHEN '2' THEN 'Cash'
+        WHEN '3' THEN 'No Charge'
+        WHEN '4' THEN 'Dispute'
+        WHEN '5' THEN 'Unknown'
+        WHEN '6' THEN 'Voided Trip'
+        WHEN '0' THEN 'Unknown'
+        ELSE 'Unknown'
+    END AS payment_type_label,
+    rytt.fare_amount,
+    rytt.extra,
+    rytt.mta_tax,
+    rytt.tip_amount,
+    rytt.tolls_amount,
+    rytt.improvement_surcharge,
+    rytt.total_amount,
+    rytt.congestion_surcharge,
+    rytt.airport_fee,
+    rytt.cbd_congestion_fee,
+    rytt.tpep_pickup_datetime::DATE AS pickup_date,
+    EXTRACT(HOUR FROM rytt.tpep_pickup_datetime)::INTEGER AS pickup_hour,
+    rytt.tpep_pickup_datetime::TIME AS pickup_time,
+    TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) AS pickup_day_name,
+    CASE
+        WHEN TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) IN ('Saturday', 'Sunday') THEN 'Y'
+        ELSE 'N'
+    END AS is_weekend,
+    CASE
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 0 AND 5 THEN 'Late Night'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 6 AND 10 THEN 'Morning'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 11 AND 15 THEN 'Afternoon'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 16 AND 19 THEN 'Evening Rush'
+        ELSE 'Night'
+    END AS time_period,
+    ROUND(EXTRACT(EPOCH FROM (rytt.tpep_dropoff_datetime - rytt.tpep_pickup_datetime)) / 60) AS trip_duration_minutes
+FROM bronze.raw_yellow_taxi_trip rytt
+JOIN silver.taxi_zones_mapping pickup_zone
+    ON rytt.pulocationid = pickup_zone.locationid
+JOIN silver.taxi_zones_mapping dropoff_zone
+    ON rytt.dolocationid = dropoff_zone.locationid
+WHERE rytt.vendorid IS NOT NULL
+    AND rytt.tpep_pickup_datetime IS NOT NULL
+    AND rytt.tpep_dropoff_datetime IS NOT NULL
+    AND rytt.pulocationid IS NOT NULL
+    AND rytt.dolocationid IS NOT NULL
+    AND rytt.passenger_count IS NOT NULL
+    AND rytt.trip_distance IS NOT NULL
+    AND rytt.payment_type IS NOT NULL
+    AND rytt.total_amount IS NOT NULL
+    AND rytt.tpep_dropoff_datetime > rytt.tpep_pickup_datetime
+    AND rytt.passenger_count > 0
+    AND rytt.trip_distance > 0
+    AND COALESCE(rytt.fare_amount, 0) >= 0
+    AND COALESCE(rytt.tip_amount, 0) >= 0
+    AND rytt.total_amount >= 0;
+
+CREATE TABLE silver.data_quality_issues (
+    issue_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER,
+    tpep_pickup_datetime TIMESTAMP,
+    tpep_dropoff_datetime TIMESTAMP,
+    passenger_count NUMERIC,
+    trip_distance NUMERIC,
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    pu_location_id INTEGER,
+    do_location_id INTEGER,
+    payment_type VARCHAR(50),
+    fare_amount NUMERIC,
+    tip_amount NUMERIC,
+    total_amount NUMERIC,
+    error_type VARCHAR(50) NOT NULL,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.data_quality_issues (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    pu_location_id,
+    do_location_id,
+    payment_type,
+    fare_amount,
+    tip_amount,
+    total_amount,
+    error_type
+)
+SELECT
+    b.vendorid AS vendor_id,
+    b.tpep_pickup_datetime,
+    b.tpep_dropoff_datetime,
+    b.passenger_count,
+    b.trip_distance,
+    b.ratecodeid AS rate_code_id,
+    b.store_and_fwd_flag,
+    b.pulocationid AS pu_location_id,
+    b.dolocationid AS do_location_id,
+    b.payment_type,
+    b.fare_amount,
+    b.tip_amount,
+    b.total_amount,
+    CASE
+        WHEN b.vendorid IS NULL
+            OR b.tpep_pickup_datetime IS NULL
+            OR b.tpep_dropoff_datetime IS NULL
+            OR b.pulocationid IS NULL
+            OR b.dolocationid IS NULL
+            OR b.passenger_count IS NULL
+            OR b.trip_distance IS NULL
+            OR b.payment_type IS NULL
+            OR b.total_amount IS NULL THEN 'Data Invalid'
+        WHEN pickup_zone.locationid IS NULL OR dropoff_zone.locationid IS NULL THEN 'Location Invalid'
+        WHEN b.tpep_pickup_datetime >= b.tpep_dropoff_datetime THEN 'Duration Invalid'
+        WHEN b.trip_distance <= 0 THEN 'Distance Invalid'
+        WHEN b.passenger_count <= 0 THEN 'Passenger Invalid'
+        WHEN COALESCE(b.fare_amount, 0) < 0 THEN 'Fare Invalid'
+        WHEN COALESCE(b.tip_amount, 0) < 0 THEN 'Tip Invalid'
+        WHEN b.total_amount < 0 THEN 'Amount Invalid'
+    END AS error_type
+FROM bronze.raw_yellow_taxi_trip b
+LEFT JOIN silver.taxi_zones_mapping pickup_zone
+    ON b.pulocationid = pickup_zone.locationid
+LEFT JOIN silver.taxi_zones_mapping dropoff_zone
+    ON b.dolocationid = dropoff_zone.locationid
+WHERE b.vendorid IS NULL
+    OR b.tpep_pickup_datetime IS NULL
+    OR b.tpep_dropoff_datetime IS NULL
+    OR b.pulocationid IS NULL
+    OR b.dolocationid IS NULL
+    OR b.passenger_count IS NULL
+    OR b.trip_distance IS NULL
+    OR b.payment_type IS NULL
+    OR b.total_amount IS NULL
+    OR pickup_zone.locationid IS NULL
+    OR dropoff_zone.locationid IS NULL
+    OR b.tpep_pickup_datetime >= b.tpep_dropoff_datetime
+    OR b.passenger_count <= 0
+    OR b.trip_distance <= 0
+    OR COALESCE(b.fare_amount, 0) < 0
+    OR COALESCE(b.tip_amount, 0) < 0
+    OR b.total_amount < 0;
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_datetime
+ON silver.cleaned_yellow_taxi_trip (tpep_pickup_datetime);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_date
+ON silver.cleaned_yellow_taxi_trip (pickup_date);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_hour
+ON silver.cleaned_yellow_taxi_trip (pickup_hour);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_payment_type
+ON silver.cleaned_yellow_taxi_trip (payment_type_label);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_location
+ON silver.cleaned_yellow_taxi_trip (pu_location_id, do_location_id);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_zone
+ON silver.cleaned_yellow_taxi_trip (pickup_borough, pickup_zone);
+
+CREATE INDEX IF NOT EXISTS idx_taxi_zones_mapping_borough
+ON silver.taxi_zones_mapping (borough);
+
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_error_type
+ON silver.data_quality_issues (error_type);
+]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) | duration: 0.03s ===
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.CheckViolation: new row for relation "cleaned_yellow_taxi_trip" violates check constraint "cleaned_yellow_taxi_trip_trip_duration_minutes_check"
+DETAIL:  Failing row contains (936, 2, 2025-12-31 23:57:29, 2025-12-31 23:57:32, 2.0, 0.01, 2.0, N, Normal, 132, Queens, JFK Airport, 264, Unknown, Unknown, 3, No Charge, 70.0, 0.0, 0.5, 0.0, 0.0, 1.0, 71.5, 0.0, 0.0, 0.0, 2025-12-31, 23, 23:57:29, Wednesday, N, Night, 0, 2026-07-07 07:43:52.31917).
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/anninditas/Desktop/Purwadhika/JCDEAH-009/Capstone02/main.py", line 51, in <module>
+    transformer.execute_sql_file(transform_silver_path)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anninditas/Desktop/Purwadhika/JCDEAH-009/Capstone02/scripts/etl.py", line 325, in execute_sql_file
+    conn.exec_driver_sql(sql_script)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1781, in exec_driver_sql
+    ret = self._execute_context(
+        dialect,
+    ...<5 lines>...
+        distilled_parameters,
+    )
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.IntegrityError: (psycopg2.errors.CheckViolation) new row for relation "cleaned_yellow_taxi_trip" violates check constraint "cleaned_yellow_taxi_trip_trip_duration_minutes_check"
+DETAIL:  Failing row contains (936, 2, 2025-12-31 23:57:29, 2025-12-31 23:57:32, 2.0, 0.01, 2.0, N, Normal, 132, Queens, JFK Airport, 264, Unknown, Unknown, 3, No Charge, 70.0, 0.0, 0.5, 0.0, 0.0, 1.0, 71.5, 0.0, 0.0, 0.0, 2025-12-31, 23, 23:57:29, Wednesday, N, Night, 0, 2026-07-07 07:43:52.31917).
+
+[SQL: CREATE SCHEMA IF NOT EXISTS silver;
+CREATE SCHEMA IF NOT EXISTS gold;
+
+DROP VIEW IF EXISTS gold.vw_trip_enriched;
+DROP VIEW IF EXISTS gold.vw_daily_trip_summary;
+DROP VIEW IF EXISTS gold.vw_zone_performance;
+DROP VIEW IF EXISTS gold.trip_detail_view;
+DROP VIEW IF EXISTS gold.daily_trip_summary;
+DROP VIEW IF EXISTS gold.location_performance;
+DROP VIEW IF EXISTS gold.payment_method_summary;
+DROP VIEW IF EXISTS gold.weekend_trip_summary;
+DROP VIEW IF EXISTS gold.data_quality_summary;
+DROP TABLE IF EXISTS silver.data_quality_issues CASCADE;
+DROP TABLE IF EXISTS silver.cleaned_yellow_taxi_trip CASCADE;
+DROP TABLE IF EXISTS silver.taxi_zones_mapping CASCADE;
+
+CREATE TABLE silver.taxi_zones_mapping (
+    locationid INTEGER PRIMARY KEY,
+    borough VARCHAR(100) NOT NULL,
+    zone VARCHAR(255) NOT NULL,
+    service_zone VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.taxi_zones_mapping (
+    locationid,
+    borough,
+    zone,
+    service_zone
+)
+SELECT
+    locationid,
+    COALESCE(borough, 'Unknown') AS borough,
+    COALESCE(zone, 'Unknown') AS zone,
+    COALESCE(service_zone, 'Unknown') AS service_zone
+FROM bronze.raw_taxi_zone_lookup
+WHERE locationid IS NOT NULL;
+
+CREATE TABLE silver.cleaned_yellow_taxi_trip (
+    cleaned_trip_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER NOT NULL,
+    tpep_pickup_datetime TIMESTAMP NOT NULL,
+    tpep_dropoff_datetime TIMESTAMP NOT NULL,
+    passenger_count NUMERIC NOT NULL CHECK (passenger_count > 0),
+    trip_distance NUMERIC NOT NULL CHECK (trip_distance > 0),
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    store_and_fwd_label VARCHAR(30),
+    pu_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    pickup_borough VARCHAR(100),
+    pickup_zone VARCHAR(255),
+    do_location_id INTEGER NOT NULL REFERENCES silver.taxi_zones_mapping (locationid),
+    dropoff_borough VARCHAR(100),
+    dropoff_zone VARCHAR(255),
+    payment_type VARCHAR(50) NOT NULL,
+    payment_type_label VARCHAR(50) NOT NULL,
+    fare_amount NUMERIC CHECK (fare_amount >= 0),
+    extra NUMERIC,
+    mta_tax NUMERIC,
+    tip_amount NUMERIC CHECK (tip_amount >= 0),
+    tolls_amount NUMERIC,
+    improvement_surcharge NUMERIC,
+    total_amount NUMERIC NOT NULL CHECK (total_amount >= 0),
+    congestion_surcharge NUMERIC,
+    airport_fee NUMERIC,
+    cbd_congestion_fee NUMERIC,
+    pickup_date DATE NOT NULL,
+    pickup_hour INTEGER NOT NULL CHECK (pickup_hour BETWEEN 0 AND 23),
+    pickup_time TIME NOT NULL,
+    pickup_day_name VARCHAR(20) NOT NULL,
+    is_weekend VARCHAR(1) NOT NULL CHECK (is_weekend IN ('Y', 'N')),
+    time_period VARCHAR(30) NOT NULL,
+    trip_duration_minutes NUMERIC NOT NULL CHECK (trip_duration_minutes > 0),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.cleaned_yellow_taxi_trip (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    store_and_fwd_label,
+    pu_location_id,
+    pickup_borough,
+    pickup_zone,
+    do_location_id,
+    dropoff_borough,
+    dropoff_zone,
+    payment_type,
+    payment_type_label,
+    fare_amount,
+    extra,
+    mta_tax,
+    tip_amount,
+    tolls_amount,
+    improvement_surcharge,
+    total_amount,
+    congestion_surcharge,
+    airport_fee,
+    cbd_congestion_fee,
+    pickup_date,
+    pickup_hour,
+    pickup_time,
+    pickup_day_name,
+    is_weekend,
+    time_period,
+    trip_duration_minutes
+)
+SELECT
+    rytt.vendorid AS vendor_id,
+    rytt.tpep_pickup_datetime,
+    rytt.tpep_dropoff_datetime,
+    rytt.passenger_count,
+    rytt.trip_distance,
+    rytt.ratecodeid AS rate_code_id,
+    rytt.store_and_fwd_flag,
+    CASE
+        WHEN rytt.store_and_fwd_flag = 'Y' THEN 'Store and Forward'
+        WHEN rytt.store_and_fwd_flag = 'N' THEN 'Normal'
+        ELSE 'Unknown'
+    END AS store_and_fwd_label,
+    rytt.pulocationid AS pu_location_id,
+    pickup_zone.borough AS pickup_borough,
+    pickup_zone.zone AS pickup_zone,
+    rytt.dolocationid AS do_location_id,
+    dropoff_zone.borough AS dropoff_borough,
+    dropoff_zone.zone AS dropoff_zone,
+    rytt.payment_type,
+    CASE rytt.payment_type::TEXT
+        WHEN '1' THEN 'Credit Card'
+        WHEN '2' THEN 'Cash'
+        WHEN '3' THEN 'No Charge'
+        WHEN '4' THEN 'Dispute'
+        WHEN '5' THEN 'Unknown'
+        WHEN '6' THEN 'Voided Trip'
+        WHEN '0' THEN 'Unknown'
+        ELSE 'Unknown'
+    END AS payment_type_label,
+    rytt.fare_amount,
+    rytt.extra,
+    rytt.mta_tax,
+    rytt.tip_amount,
+    rytt.tolls_amount,
+    rytt.improvement_surcharge,
+    rytt.total_amount,
+    rytt.congestion_surcharge,
+    rytt.airport_fee,
+    rytt.cbd_congestion_fee,
+    rytt.tpep_pickup_datetime::DATE AS pickup_date,
+    EXTRACT(HOUR FROM rytt.tpep_pickup_datetime)::INTEGER AS pickup_hour,
+    rytt.tpep_pickup_datetime::TIME AS pickup_time,
+    TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) AS pickup_day_name,
+    CASE
+        WHEN TRIM(TO_CHAR(rytt.tpep_pickup_datetime, 'Day')) IN ('Saturday', 'Sunday') THEN 'Y'
+        ELSE 'N'
+    END AS is_weekend,
+    CASE
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 0 AND 5 THEN 'Late Night'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 6 AND 10 THEN 'Morning'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 11 AND 15 THEN 'Afternoon'
+        WHEN EXTRACT(HOUR FROM rytt.tpep_pickup_datetime) BETWEEN 16 AND 19 THEN 'Evening Rush'
+        ELSE 'Night'
+    END AS time_period,
+    ROUND(EXTRACT(EPOCH FROM (rytt.tpep_dropoff_datetime - rytt.tpep_pickup_datetime)) / 60) AS trip_duration_minutes
+FROM bronze.raw_yellow_taxi_trip rytt
+JOIN silver.taxi_zones_mapping pickup_zone
+    ON rytt.pulocationid = pickup_zone.locationid
+JOIN silver.taxi_zones_mapping dropoff_zone
+    ON rytt.dolocationid = dropoff_zone.locationid
+WHERE rytt.vendorid IS NOT NULL
+    AND rytt.tpep_pickup_datetime IS NOT NULL
+    AND rytt.tpep_dropoff_datetime IS NOT NULL
+    AND rytt.pulocationid IS NOT NULL
+    AND rytt.dolocationid IS NOT NULL
+    AND rytt.passenger_count IS NOT NULL
+    AND rytt.trip_distance IS NOT NULL
+    AND rytt.payment_type IS NOT NULL
+    AND rytt.total_amount IS NOT NULL
+    AND rytt.tpep_dropoff_datetime > rytt.tpep_pickup_datetime
+    AND rytt.passenger_count > 0
+    AND rytt.trip_distance > 0
+    AND COALESCE(rytt.fare_amount, 0) >= 0
+    AND COALESCE(rytt.tip_amount, 0) >= 0
+    AND rytt.total_amount >= 0;
+
+CREATE TABLE silver.data_quality_issues (
+    issue_id BIGSERIAL PRIMARY KEY,
+    vendor_id INTEGER,
+    tpep_pickup_datetime TIMESTAMP,
+    tpep_dropoff_datetime TIMESTAMP,
+    passenger_count NUMERIC,
+    trip_distance NUMERIC,
+    rate_code_id NUMERIC,
+    store_and_fwd_flag VARCHAR(20),
+    pu_location_id INTEGER,
+    do_location_id INTEGER,
+    payment_type VARCHAR(50),
+    fare_amount NUMERIC,
+    tip_amount NUMERIC,
+    total_amount NUMERIC,
+    error_type VARCHAR(50) NOT NULL,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO silver.data_quality_issues (
+    vendor_id,
+    tpep_pickup_datetime,
+    tpep_dropoff_datetime,
+    passenger_count,
+    trip_distance,
+    rate_code_id,
+    store_and_fwd_flag,
+    pu_location_id,
+    do_location_id,
+    payment_type,
+    fare_amount,
+    tip_amount,
+    total_amount,
+    error_type
+)
+SELECT
+    b.vendorid AS vendor_id,
+    b.tpep_pickup_datetime,
+    b.tpep_dropoff_datetime,
+    b.passenger_count,
+    b.trip_distance,
+    b.ratecodeid AS rate_code_id,
+    b.store_and_fwd_flag,
+    b.pulocationid AS pu_location_id,
+    b.dolocationid AS do_location_id,
+    b.payment_type,
+    b.fare_amount,
+    b.tip_amount,
+    b.total_amount,
+    CASE
+        WHEN b.vendorid IS NULL
+            OR b.tpep_pickup_datetime IS NULL
+            OR b.tpep_dropoff_datetime IS NULL
+            OR b.pulocationid IS NULL
+            OR b.dolocationid IS NULL
+            OR b.passenger_count IS NULL
+            OR b.trip_distance IS NULL
+            OR b.payment_type IS NULL
+            OR b.total_amount IS NULL THEN 'Data Invalid'
+        WHEN pickup_zone.locationid IS NULL OR dropoff_zone.locationid IS NULL THEN 'Location Invalid'
+        WHEN b.tpep_pickup_datetime >= b.tpep_dropoff_datetime THEN 'Duration Invalid'
+        WHEN b.trip_distance <= 0 THEN 'Distance Invalid'
+        WHEN b.passenger_count <= 0 THEN 'Passenger Invalid'
+        WHEN COALESCE(b.fare_amount, 0) < 0 THEN 'Fare Invalid'
+        WHEN COALESCE(b.tip_amount, 0) < 0 THEN 'Tip Invalid'
+        WHEN b.total_amount < 0 THEN 'Amount Invalid'
+    END AS error_type
+FROM bronze.raw_yellow_taxi_trip b
+LEFT JOIN silver.taxi_zones_mapping pickup_zone
+    ON b.pulocationid = pickup_zone.locationid
+LEFT JOIN silver.taxi_zones_mapping dropoff_zone
+    ON b.dolocationid = dropoff_zone.locationid
+WHERE b.vendorid IS NULL
+    OR b.tpep_pickup_datetime IS NULL
+    OR b.tpep_dropoff_datetime IS NULL
+    OR b.pulocationid IS NULL
+    OR b.dolocationid IS NULL
+    OR b.passenger_count IS NULL
+    OR b.trip_distance IS NULL
+    OR b.payment_type IS NULL
+    OR b.total_amount IS NULL
+    OR pickup_zone.locationid IS NULL
+    OR dropoff_zone.locationid IS NULL
+    OR b.tpep_pickup_datetime >= b.tpep_dropoff_datetime
+    OR b.passenger_count <= 0
+    OR b.trip_distance <= 0
+    OR COALESCE(b.fare_amount, 0) < 0
+    OR COALESCE(b.tip_amount, 0) < 0
+    OR b.total_amount < 0;
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_datetime
+ON silver.cleaned_yellow_taxi_trip (tpep_pickup_datetime);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_date
+ON silver.cleaned_yellow_taxi_trip (pickup_date);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_hour
+ON silver.cleaned_yellow_taxi_trip (pickup_hour);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_payment_type
+ON silver.cleaned_yellow_taxi_trip (payment_type_label);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_location
+ON silver.cleaned_yellow_taxi_trip (pu_location_id, do_location_id);
+
+CREATE INDEX IF NOT EXISTS idx_cleaned_yellow_taxi_trip_pickup_zone
+ON silver.cleaned_yellow_taxi_trip (pickup_borough, pickup_zone);
+
+CREATE INDEX IF NOT EXISTS idx_taxi_zones_mapping_borough
+ON silver.taxi_zones_mapping (borough);
+
+CREATE INDEX IF NOT EXISTS idx_data_quality_issues_error_type
+ON silver.data_quality_issues (error_type);
+]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+2026-07-07 14:43:52 ERROR main exited with status=1 after 131s
+2026-07-07 14:47:42 PIPELINE START
+2026-07-07 14:47:42 START start database
+ Container capstone02_postgres Running 
+2026-07-07 14:47:42 END   start database duration=0s
+2026-07-07 14:47:42 START wait database
+/var/run/postgresql:5432 - accepting connections
+2026-07-07 14:47:43 END   wait database duration=1s
+2026-07-07 14:47:43 START main
+✅[OK] === Database connection established ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/01_create_bronze_tables.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/01_create_bronze_tables.sql | duration: 0.05s ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.00s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.02s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.11s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 131.00s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/02_transform_and_load_silver.sql | duration: 30.90s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/03_create_gold_data_mart.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 2.19s ===
+2026-07-07 14:50:27 END   main duration=164s
+2026-07-07 14:50:27 PIPELINE COMPLETE
+2026-07-07 14:53:16 PIPELINE START
+2026-07-07 14:53:16 START start database
+ Container capstone02_postgres Running 
+2026-07-07 14:53:16 END   start database duration=0s
+2026-07-07 14:53:16 START wait database
+/var/run/postgresql:5432 - accepting connections
+2026-07-07 14:53:16 END   wait database duration=0s
+2026-07-07 14:53:16 START main
+✅[OK] === Database connection established ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/01_create_bronze_tables.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/01_create_bronze_tables.sql | duration: 0.01s ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.00s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.02s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.18s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 142.50s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/02_transform_and_load_silver.sql | duration: 32.24s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/03_create_gold_data_mart.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 2.07s ===
+2026-07-07 14:56:14 END   main duration=178s
+2026-07-07 14:56:14 PIPELINE COMPLETE
+2026-07-07 15:07:34 PIPELINE START
+2026-07-07 15:07:34 START start database
+ Container capstone02_postgres Running 
+2026-07-07 15:07:34 END   start database duration=0s
+2026-07-07 15:07:34 START wait database
+/var/run/postgresql:5432 - accepting connections
+2026-07-07 15:07:34 END   wait database duration=0s
+2026-07-07 15:07:34 START main
+✅[OK] === Database connection established ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/01_create_bronze_tables.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/01_create_bronze_tables.sql | duration: 0.01s ===
+⏳[START] === Extract csv dimulai: taxi_zone_lookup_table.csv ===
+✅[OK] === File berhasil dimuat: taxi_zone_lookup_table.csv ===
+✅[OK] === Extract csv selesai | rows: 265 | duration: 0.01s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_taxi_zone_lookup | rows: 265 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_taxi_zone_lookup ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_taxi_zone_lookup | total rows: 265 | duration: 0.02s ===
+⏳[START] === Extract parquet dimulai: yellow_tripdata_2026-01.parquet ===
+✅[OK] === File berhasil dimuat: yellow_tripdata_2026-01.parquet ===
+✅[OK] === Extract parquet selesai | rows: 3724889 | duration: 0.23s ===
+⏳[START] === Load bronze dimulai | table: bronze.raw_yellow_taxi_trip | rows: 3724889 ===
+✅[OK] === Data berhasil dimuat ke tabel bronze.raw_yellow_taxi_trip ===
+✅[OK] === Proses load bronze selesai | table: bronze.raw_yellow_taxi_trip | total rows: 3724889 | duration: 144.81s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/02_transform_and_load_silver.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/02_transform_and_load_silver.sql | duration: 33.49s ===
+⏳[START] === Transform dan Load SQL dimulai: sql/init/03_create_gold_data_mart.sql ===
+✅[OK] === Transform dan Load SQL berhasil dijalankan: sql/init/03_create_gold_data_mart.sql | duration: 2.06s ===
+2026-07-07 15:10:36 END   main duration=182s
+2026-07-07 15:10:36 PIPELINE COMPLETE

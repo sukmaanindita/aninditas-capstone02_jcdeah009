@@ -37,7 +37,7 @@ Catatan: script SQL di `sql/init` hanya otomatis dijalankan oleh Docker saat vol
 
 Schema dibuat melalui file SQL init:
 
-- `sql/init/01_create_and_load_bronze.sql`
+- `sql/init/01_create_bronze_tables.sql`
 - `sql/init/02_transform_and_load_silver.sql`
 - `sql/init/03_create_gold_data_mart.sql`
 
@@ -68,6 +68,7 @@ bash auto_command_script.sh
 Script tersebut menjalankan:
 
 ```bash
+docker compose up -d
 python3 -u main.py
 ```
 
@@ -122,7 +123,10 @@ Transformasi silver mencakup:
 - Filter `passenger_count <= 0`.
 - Filter `trip_distance <= 0`.
 - Filter `total_amount < 0`.
-- Membuat kolom turunan seperti `pickup_date`, `pickup_time`, `pickup_day_name`, `is_weekend`, dan `trip_duration_minutes`.
+- Membuat kolom turunan seperti `pickup_date`, `pickup_hour`, `pickup_time`, `pickup_day_name`, `is_weekend`, `time_period`, dan `trip_duration_minutes`.
+- Mapping `payment_type` menjadi `payment_type_label`.
+- Mapping `store_and_fwd_flag` menjadi `store_and_fwd_label`.
+- Join ke taxi zone lookup untuk menambahkan pickup/dropoff borough dan zone.
 - Memisahkan data invalid ke `silver.data_quality_issues`.
 
 ### Gold
@@ -135,7 +139,7 @@ View:
 - `gold.vw_daily_trip_summary`
 - `gold.vw_zone_performance`
 
-Mapping `pickup_location` dan `dropoff_location` dilakukan pada layer gold melalui join ke `silver.taxi_zones_mapping`.
+Gold view memakai hasil transformasi silver yang sudah berisi payment label, time attributes, serta pickup/dropoff borough dan zone.
 
 ## 6. Cara Menjalankan Transformasi SQL
 
@@ -194,7 +198,7 @@ Capstone02/
 ├── business_questions.sql
 ├── docker-compose.yaml
 ├── main.py
-├── reqirements.txt
+├── requirements.txt
 ├── data/
 │   └── raw/
 │       ├── taxi_zone_lookup_table.csv
@@ -207,7 +211,7 @@ Capstone02/
 │   └── etl.py
 └── sql/
     └── init/
-        ├── 01_create_and_load_bronze.sql
+        ├── 01_create_bronze_tables.sql
         ├── 02_transform_and_load_silver.sql
         └── 03_create_gold_data_mart.sql
 ```
@@ -221,15 +225,12 @@ Relasi utama:
 ```text
 bronze.raw_taxi_zone_lookup
     locationid PK
-        ↑
-        ├── bronze.raw_yellow_taxi_trip.pulocationid
-        └── bronze.raw_yellow_taxi_trip.dolocationid
 
 silver.taxi_zones_mapping
     locationid PK
         ↑
-        ├── gold.vw_trip_enriched.pulocationid
-        └── gold.vw_trip_enriched.dolocationid
+        ├── silver.cleaned_yellow_taxi_trip.pu_location_id
+        └── silver.cleaned_yellow_taxi_trip.do_location_id
 ```
 
 Tabel utama:
@@ -267,16 +268,16 @@ Kendala teknis:
 
 - File SQL di `/docker-entrypoint-initdb.d` hanya otomatis dijalankan saat volume PostgreSQL pertama kali dibuat.
 - `pandas.to_sql(if_exists="replace")` dapat menghapus constraint, sehingga load bronze menggunakan pola `TRUNCATE TABLE ... RESTART IDENTITY CASCADE` lalu `append`.
-- `raw_taxi_zone_lookup` harus diload sebelum `raw_yellow_taxi_trip` karena `pulocationid` dan `dolocationid` mengacu ke `locationid`.
+- `raw_taxi_zone_lookup` diload sebelum `raw_yellow_taxi_trip` agar mapping lokasi sudah tersedia untuk proses transformasi ke silver.
 - Data invalid perlu dipisahkan agar tidak mengganggu analisis di layer silver dan gold.
 - Gold layer menggunakan view, sehingga tidak bisa dibuat index langsung seperti table biasa.
 
 Asumsi:
 
-- `pulocationid` dan `dolocationid` berisi ID lokasi yang valid dan dapat dicocokkan dengan `locationid`.
+- `pu_location_id` dan `do_location_id` pada layer silver berisi ID lokasi yang valid dan dapat dicocokkan dengan `locationid`.
 - Trip valid memiliki `tpep_dropoff_datetime > tpep_pickup_datetime`.
 - Trip valid memiliki `passenger_count > 0`.
 - Trip valid memiliki `trip_distance > 0`.
 - Trip valid memiliki `total_amount >= 0`.
-- Field `payment_type` tetap disimpan sesuai value source.
+- Field `payment_type` tetap disimpan sesuai value source, sedangkan `payment_type_label` digunakan untuk analisis yang lebih mudah dibaca.
 - Data mart gold digunakan untuk kebutuhan analisis dan dashboard, bukan sebagai storage raw.
